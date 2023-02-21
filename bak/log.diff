@@ -1,0 +1,210 @@
+手动控制执行?[[y]/n]
+init global  mesh_faceAreas_
+init global  mesh_faceOwner_
+init global  mesh_faceNeighbour_
+init global  mesh_cellVolumes_
+init global  mesh_delta_ref_
+init global  phi_mesh_surfaceInterpolation_weights_
+init global  phi_mesh_nonOrthDeltaCoeffs_
+init global  mesh_delta_ref_boundaryField_
+init global  runTime_deltaT_value_
+init global  nu_value_
+init global  boundary_start
+init global  boundary_end
+init global  U_boundaryField_
+init global  boundary_p_type
+init global  boundary_u_type
+init global  U
+init global  p
+init global  p_boundaryField_
+init global  phi
+init global  phi_boundaryField_
+face_area_norm[:ni] vs mesh_magSf_ ok
+
+loop 1
+ddt_U vs fvm_ddt_U_ref_ ok
+div_phi_U vs fvm_div_phi_U_ref_ ok
+laplacian_nu_U vs fvm_laplacian_nu_U_ref_ ok
+UEqn vs UEqn ok
+U vs U ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+
+loop 2
+ddt_U vs fvm_ddt_U_ref_ ok
+div_phi_U vs fvm_div_phi_U_ref_ ok
+laplacian_nu_U vs fvm_laplacian_nu_U_ref_ ok
+UEqn vs UEqn ok
+U vs U ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+update global pEqn => pEqn rtol:
+[3, 264] 0.006531261112253439 0.006531239018768176 3.3827402733247085e-06
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+
+loop 3
+ddt_U vs fvm_ddt_U_ref_ ok
+div_phi_U vs fvm_div_phi_U_ref_ ok
+laplacian_nu_U vs fvm_laplacian_nu_U_ref_ ok
+UEqn vs UEqn ok
+U vs U ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+
+loop 4
+ddt_U vs fvm_ddt_U_ref_ ok
+div_phi_U vs fvm_div_phi_U_ref_ ok
+laplacian_nu_U vs fvm_laplacian_nu_U_ref_ ok
+UEqn vs UEqn ok
+U vs U ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+ddtCorr vs fvc_ddtCorr_U_phi_ref_ ok
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+
+loop 5
+ddt_U vs fvm_ddt_U_ref_ ok
+div_phi_U vs fvm_div_phi_U_ref_ ok
+laplacian_nu_U vs fvm_laplacian_nu_U_ref_ ok
+UEqn vs UEqn ok
+U vs U ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+update global ddtCorr => fvc_ddtCorr_U_phi_ref_ rtol:
+[385] 0.011603307869592619 0.011603281845345438 2.242835046817737e-06
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok
+rAU vs rAU ok
+HbyA vs HbyA ok
+flux_HbyA vs fvc_flux_HbyA_ref_ ok
+interpolate_rAU vs fvc_interpolate_rAU_ref_ ok
+update global ddtCorr => fvc_ddtCorr_U_phi_ref_ rtol:
+[385] 0.011603307869592619 0.011603281845345438 2.242835046817737e-06
+phiHbyA vs phiHbyA ok
+HbyA_boundary vs HbyA_boundaryField_ ok
+phiHbyA_boundaryField_ vs phiHbyA_boundaryField_ ok
+pEqn vs pEqn ok
+p vs p ok
+phi vs phi ok
+phi_boundaryField_ vs phi_boundaryField_ ok
+fvc_grad_p vs fvc_grad_p_ref_ ok
+U vs U ok
+U_boundary vs U_boundaryField_ ok

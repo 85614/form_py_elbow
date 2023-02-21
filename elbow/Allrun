@@ -8,7 +8,7 @@ cd ${0%/*} || exit 1    # Run from this directory
 application=$(getApplication)
 
 runApplication fluentMeshToFoam elbow.msh
-runApplication "$application"
+runApplication ../icoFoam.exe
 runApplication foamMeshToFluent
 runApplication foamDataToFluent
 

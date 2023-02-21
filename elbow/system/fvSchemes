@@ -27,12 +27,12 @@ gradSchemes
 divSchemes
 {
     default         none;
-    div(phi,U)      Gauss limitedLinearV 1;
+    div(phi,U)      Gauss linear;
 }
 
 laplacianSchemes
 {
-    default         Gauss linear corrected;
+    default         Gauss linear orthogonal;
 }
 
 interpolationSchemes
@@ -42,7 +42,7 @@ interpolationSchemes
 
 snGradSchemes
 {
-    default         corrected;
+    default         orthogonal;
 }
 
 
