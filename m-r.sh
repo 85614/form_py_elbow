@@ -8,7 +8,7 @@ cd icoFoam
 
 wmake # 编译
 
-cd ../elbow
+cd ../cavity
 
 ./Allclean # 清理
 

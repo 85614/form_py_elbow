@@ -549,7 +549,9 @@ def run_times_control(times, fun):
 make_pUqn = run_times_control(3, make_pUqn)
 
 # 出口边界，因为只有出口边界是特殊的，所以暂时这样处理，后续实现通用的方案
-boundary_out_begin, boundary_out_end = 112, 120
+boundary_out_begin, boundary_out_end = 112, 120 # 出口边界的范围额
+# boundary_out_begin, boundary_out_end = 0, 0 # 使用cavity
+
 
 myrtol = 1e-6
 myatol = 1e-8
