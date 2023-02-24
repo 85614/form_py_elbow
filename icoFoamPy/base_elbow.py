@@ -19,10 +19,19 @@ def decode_hexfloat(v):
         return [decode_hexfloat(x) for x in v]
     elif type(v) == tuple:
         return [decode_hexfloat(x) for x in v]
+    elif type(v) == dict:
+        return { key: decode_hexfloat(val) for key, val in v.items() }
     elif type(v) == str:
         if "0x" in v:
             return float.fromhex(v)
     return v
+
+def cat_lists(v):
+    """拼接多个不同列表"""
+    v_res = []
+    for x in v:
+        v_res += x
+    return v_res
 
 def handle(msg, k, v):
     """通过msg, 对k, v进行一些处理, 可以自行添加需要的msg"""
@@ -30,12 +39,15 @@ def handle(msg, k, v):
     v = decode_hexfloat(v)
 
     v_res = v
-    def cat_lists(v):
-        """拼接多个不同列表"""
-        v_res = []
-        for x in v:
-            v_res += x
-        return v_res
+    if type(v) == dict:
+        for boundary_k in (BOUNDARYFIELD, INTERNALCOEFFS, BOUNDARYCOEFFS):
+            if boundary_k in v:
+                v[boundary_k] = cat_lists(v[boundary_k])
+        v_res = handle_all_list(v.copy(), np.array)
+        if "laplacian" in msg:
+            v_res[LOWER] = v_res[UPPER].copy() # laplacian lower = upper但是打印出来，总是显示没有lower
+        return k, v_res
+
     if "boundary" in msg:
         v_res = cat_lists(v)
     if "Eqn" in msg:
@@ -109,7 +121,15 @@ def check(msg, var, foam_var, expected):
         #     print((var.shape, expected.shape))
         #     # print([*zip(var, expected, diff(var, expected))])
         print_diff(var, expected)
-        eval(var_name)[:] = expected
+        var = eval(var_name)
+        if type(var) == dict:
+            var.update(expected)
+        elif var_name.isidentifier():
+            globals()[var_name] = expected
+        else:
+            assert(type(var) in (list, np.ndarray))
+            var[:] = expected
+
     return var, expected
 
 from collections.abc import Iterable
@@ -120,6 +140,12 @@ def print_diff(a, b, idx_base=()):
     对于每个不同处，打印[索引idx, a[idx], b[idx], 相对误差]
     """
     try:
+        if type(a) == dict:
+            assert(type(b) == dict)
+            for k in a:
+                if not k.startswith("_"):
+                    print_diff(a[k], b[k], [*idx_base, k])
+            return
         if (isinstance(a, Iterable)):
             if type(a) in (list, tuple):
                 assert(type(b) in (list, tuple) and len(a) == len(b))
@@ -137,6 +163,8 @@ def print_diff(a, b, idx_base=()):
             
     except:
         print(type(a), type(b))
+        print(f"{a=},{b=}")
+        # exit()
         raise
 
 
@@ -189,30 +217,89 @@ def assert_allclose(x, y):
         raise Exception(f"diff between \n{x} \nand \n{y} \nis \n{diff(x,y)}")
     return True
 
+def show_size_only(v):
+    """只关系v的类型和大小，不显示数据"""
+    if type(v) in (list, tuple):
+        return [show_size_only(x) for x in v]
+    elif type(v) == dict:
+        return { key: show_size_only(val) for key, val in v.items() }
+    elif type(v) == np.ndarray:
+        return v.shape
+    elif type(v) == str:
+        return v
+    return v
+
+def check_type(fun):
+    def decorated_fun(*args, **kargs):
+        try:
+            return fun(*args, **kargs)
+        except:
+            print(*show_size_only(args), show_size_only(kargs))
+            raise
+    return decorated_fun
+
+@check_type
 def allclose(x, y):
     if type(x) == list or type(x) == tuple:
         for item in zip(x, y):
             if not allclose(*item):
                 return False
         return True
+    if type(x) == dict:
+        if type(y) != dict:
+            return False
+        for k in x:
+            try:
+                if not k.startswith("_") and not allclose(x[k], y[k]):
+                    return False
+            except:
+                print(f"{x[k]=} {y[k]=}")
+                raise
+        return True
     return np.allclose(x, y, atol=myatol, rtol=myrtol, equal_nan=True)
+
+def handle_all_list(_dict, fun):
+    """
+    对_dict的每一个key不以'_'开始的value做相同的操作
+    原地操作, 会修改_dict
+    """
+    # print(f"{type(_dict)=}")
+    for k, v in _dict.items():
+        if not k.startswith("_"):
+            _dict[k] = fun(_dict[k])
+    return _dict
+
+
+def handle_all_list2(_dict1, _dict2, fun):
+    """
+    对_dict的每一个key不以'_'开始的value做相同的操作
+    原地操作, 会修改_dict
+    """
+    # print(f"{type(_dict)=}")
+    _dict1 = _dict1.copy()
+    for k, v in _dict1.items():
+        if not k.startswith("_"):
+            _dict1[k] = fun(_dict1[k], _dict2[k])
+    return _dict1
 
 
 def init_variable():
     if 'face_owner' in globals():
         return
-    global face_owner, face_neighbour, face_area, face_n, detla, detla_norm, Volumes, count_cell, count_internal_face, count_boundary_face, nc, ni, nb, face_area_norm, face_area_internal, face_area_boundary, dt, nu, d_cell, detla_boundary, d_cell_bounday, boundaryField, U_boundary, surfaceInterpolation_weights
+    global face_owner, face_neighbour, face_area, face_n, delta, detla_norm, Volumes, count_cell, count_internal_face, count_boundary_face, nc, ni, nb, face_area_norm, face_area_internal, face_area_boundary, dt, nu, d_cell, detla_boundary, d_cell_bounday, face_owner_boundary, U_boundary, surfaceInterpolation_weights
     face_owner = mesh_faceOwner_
     face_neighbour = mesh_faceNeighbour_
     face_area = np.array(mesh_faceAreas_)
-    detla = np.array(mesh_delta_ref_)
-    detla
-    detla_norm = np.linalg.norm(detla, axis=1)
+    # print(f"{type(mesh_delta_ref_)=}")
+    delta = handle_all_list(mesh_delta_ref_.copy(), np.array)
+    delta
+    detla_norm = handle_all_list(delta.copy(), lambda x: np.linalg.norm(x, axis=1))
+
     Volumes = np.array(mesh_cellVolumes_)
     Volumes
     count_cell = len(Volumes)
     count_internal_face =  len(face_neighbour)
-    count_boundary_face = len(U_boundaryField_)
+    count_boundary_face = len(mesh_delta_ref_[BOUNDARYFIELD])
     nc, ni, nb = count_cell, count_internal_face, count_boundary_face
     face_area_norm = np.linalg.norm(face_area, axis=1)
     face_area_internal = face_area[:count_internal_face]
@@ -223,10 +310,10 @@ def init_variable():
     nu = nu_value_
     d_cell = detla_norm
     d_cell
-    detla_boundary = np.array(mesh_delta_ref_boundaryField_)
+    detla_boundary = mesh_delta_ref_[BOUNDARYFIELD]
     d_cell_bounday = np.linalg.norm(detla_boundary, axis=1)
-    boundaryField = face_owner[count_internal_face: count_internal_face + count_boundary_face]
-    U_boundary = U_boundaryField_
+    face_owner_boundary = face_owner[count_internal_face: count_internal_face + count_boundary_face]
+    # U_boundary = U_boundaryField_
     if "phi_mesh_surfaceInterpolation_weights_" not in globals():
         surfaceInterpolation_weights = np.empty(ni)
         surfaceInterpolation_weights.fill(0.5)
@@ -252,7 +339,7 @@ def sum_lower_upper(UEqn):
 
 # UEqn
 def makeMtx(UEqn):
-    lower, diag, upper, source, vic, vbc = UEqn
+    lower, diag, upper, source, vic, vbc = (UEqn[k] for k in [LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS])
     Mtx = np.zeros((nc,nc))
     source = source.copy()
     Mtx[[*range(nc)],[*range(nc)]]=diag
@@ -261,7 +348,7 @@ def makeMtx(UEqn):
         Mtx[i][j] = upper[index]
         Mtx[j][i] = lower[index]
     for i in range(nb):
-        cell_owner = boundaryField[i]
+        cell_owner = face_owner_boundary[i]
         source[cell_owner] = source[cell_owner] + vbc[i]
         Mtx[cell_owner][cell_owner] += vic[i]
     return Mtx, source
@@ -269,7 +356,7 @@ def makeMtx(UEqn):
 def getH(div_phi_U):
     tmp, source = (makeMtx(div_phi_U))
     tmp[[*range(nc)],[*range(nc)]]=0
-    tmp = -np.matmul(tmp, U)
+    tmp = -np.matmul(tmp, U[INTERNALFIELD])
     tmp = tmp
 #     print(source_bound)
     tmp += source
@@ -277,117 +364,151 @@ def getH(div_phi_U):
     return tmp
 
 def getA(laplacian_nu_U):
-    tmp = laplacian_nu_U[1].copy()
+    tmp = laplacian_nu_U[DIAG].copy()
 #     print(tmp/V)
 #     print(laplacian_nu_U[4])
-#     print(boundaryField)
+#     print(face_owner_boundary)
     for i in range(nb):
-#         print(boundaryField[i], laplacian_nu_U[4][i])
-        if type(laplacian_nu_U[4]) == float or type(laplacian_nu_U[4]) == int:
-            tmp[boundaryField[i]] += laplacian_nu_U[INTERNALCOEFFS]
+#         print(face_owner_boundary[i], laplacian_nu_U[4][i])
+        if type(laplacian_nu_U[INTERNALCOEFFS]) == float or type(laplacian_nu_U[INTERNALCOEFFS]) == int:
+            tmp[face_owner_boundary[i]] += laplacian_nu_U[INTERNALCOEFFS]
         else:
-            tmp[boundaryField[i]] += laplacian_nu_U[INTERNALCOEFFS][i]
-    return tmp/Volumes
+            tmp[face_owner_boundary[i]] += laplacian_nu_U[INTERNALCOEFFS][i]
+    res = tmp/Volumes
+    res = quick_add_boundary(res)
+    for i in range(nb):
+        res[BOUNDARYFIELD][i] = res[INTERNALFIELD][face_owner[ni+i]]
+    return  res
 # print(*tmp,sep="\n")
 # diff(tmp, str2arr("((-0.997595 1.31939 0) (-0.980441 -1.0758 0) (-26.5416 -6.17941 0) (-22.8266 3.59791 0) (180.021 -13.4631 0) (278.541 59.5667 0));"))
 # getA(laplacian_nu_U) # 预期(-3.9 -3.9 -3 -3 -3.9 -3.9)
 
 
 LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS = range(6)
+LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS = 'lower', 'diag', 'upper', 'source', 'internalCoeffs', 'boundaryCoeffs'
+INTERNALFIELD, BOUNDARYFIELD = 'internalField', 'boundaryField'
 
 def make_UEqn():
     init_variable()
     global ddt_U, div_phi_U, laplacian_nu_U, UEqn
-    ddt_U = [0, Volumes / dt, 0, Volumes[:,None] / dt * U, 0, 0]
+    ddt_U = {}
+    ddt_U[LOWER] = 0
+    ddt_U[UPPER] = 0
+    ddt_U[INTERNALCOEFFS] = 0
+    ddt_U[BOUNDARYCOEFFS] = 0
+    ddt_U[DIAG] = Volumes / dt
+    ddt_U[SOURCE] = Volumes[:,None] / dt * U[INTERNALFIELD]
 
 
-    div_phi_U = [0]*6
-    div_phi_U[UPPER] = phi * (1-surfaceInterpolation_weights)
-    div_phi_U[LOWER] = -phi * (surfaceInterpolation_weights)
+    div_phi_U = {}
+    div_phi_U[UPPER] = phi[INTERNALFIELD] * (1-surfaceInterpolation_weights[INTERNALFIELD])
+    div_phi_U[LOWER] = -phi[INTERNALFIELD] * (surfaceInterpolation_weights[INTERNALFIELD])
     div_phi_U[DIAG] = -sum_lower_upper(div_phi_U) 
-    div_phi_U[BOUNDARYCOEFFS] = -np.sum(U_boundary * face_area_boundary, axis=1)[:,None]*U_boundary
+    div_phi_U[SOURCE] = 0
+    div_phi_U[BOUNDARYCOEFFS] = -np.sum(U[BOUNDARYFIELD] * face_area_boundary, axis=1)[:,None]*U[BOUNDARYFIELD]
     div_phi_U[BOUNDARYCOEFFS][boundary_out_begin:boundary_out_end] = 0
     div_phi_U[INTERNALCOEFFS] = np.zeros((nb, 3))
     for face in range(boundary_out_begin, boundary_out_end):
-        div_phi_U[INTERNALCOEFFS][face] = phi_boundaryField_[face]
+        div_phi_U[INTERNALCOEFFS][face] = phi[BOUNDARYFIELD][face]
         # print(U[face_owner[face+ni]])
     # print(f"{logdata['U_boundaryField_'][-1][boundary_out_begin:boundary_out_end]=}")
     # if (len(logdata['U_boundaryField_'])) >= 2:
         # print(f"{logdata['U_boundaryField_'][-2][boundary_out_begin:boundary_out_end]=}")
-    laplacian_nu_U = [0]*6
+    laplacian_nu_U = {}
 
-    laplacian_nu_U[UPPER] = nu * np.linalg.norm(face_area[:ni], axis=1)/d_cell
+    laplacian_nu_U[UPPER] = nu * np.linalg.norm(face_area[:ni], axis=1)/d_cell[INTERNALFIELD]
     laplacian_nu_U[LOWER] = laplacian_nu_U[UPPER].copy()
     laplacian_nu_U[DIAG] = -sum_lower_upper(laplacian_nu_U)
-
+    laplacian_nu_U[SOURCE] = 0
     
     laplacian_nu_U[INTERNALCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)[:,None]
     laplacian_nu_U[INTERNALCOEFFS][boundary_out_begin:boundary_out_end] = 0
-    laplacian_nu_U[BOUNDARYCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)[:,None]*U_boundary
+    laplacian_nu_U[BOUNDARYCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)[:,None]*U[BOUNDARYFIELD]
     laplacian_nu_U[BOUNDARYCOEFFS][boundary_out_begin:boundary_out_end] = 0
     # print(laplacian_nu_U[INTERNALCOEFFS])
 
     for Eqn in (ddt_U, div_phi_U, laplacian_nu_U):
-        for x, y in zip(range(nc), (ni, nc, ni, (nc,3), (nb,3), (nb,3))):
+        for x, y in zip((LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS), (ni, nc, ni, (nc,3), (nb,3), (nb,3))):
             Eqn[x] = Eqn[x] + np.zeros(y)
 
-    _UEqn = lambda: [x[0]+x[1]-x[2] for x in zip(ddt_U, div_phi_U, laplacian_nu_U)]
     
-    UEqn = _UEqn()
+    UEqn = ddt_U.copy()
+    for k in (LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS):
+        UEqn[k] = UEqn[k] + div_phi_U[k] - laplacian_nu_U[k]
     
+def update_U_boundary(U):
+    for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            for f in range(l, r):
+                U[BOUNDARYFIELD][f-first] = U[INTERNALFIELD][face_owner[f]]
 
 
 def make_U_momentumPredictor():
     
-    global grad_p, UEqn_grad, U_momentumPredictor, U, U_old, phi_old
-    grad_p = fvc_grad(p)
+    global fvc_grad_p, UEqn_grad, U_momentumPredictor, U, U_old, phi_old
+    fvc_grad_p = fvc_grad(p)
     # print(UEqn[SOURCE])
     UEqn_grad = UEqn.copy()
-    UEqn_grad[SOURCE] = UEqn_grad[SOURCE] - grad_p * Volumes[:,None] # 不使用+=，防止对UEqn进行修改
+    UEqn_grad[SOURCE] = UEqn_grad[SOURCE] - fvc_grad_p[INTERNALFIELD] * Volumes[:,None] # 不使用+=，防止对UEqn进行修改
     UEqn_grad[INTERNALCOEFFS] = UEqn_grad[INTERNALCOEFFS][:,0] # 同上
     U_momentumPredictor = np.linalg.solve(*makeMtx(UEqn_grad))
+    U_momentumPredictor = { INTERNALFIELD: U_momentumPredictor, BOUNDARYFIELD: U[BOUNDARYFIELD].copy()}
+    update_U_boundary(U_momentumPredictor)
     U, U_old = U_momentumPredictor, U
-    phi_old = phi # phi_old似乎是始终和phi相同
+    # print(f"after slove UEqn {U[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
+    # print(f"after slove UEqn {U_old[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
+    phi_old = {k: v.copy() if not k.startswith("_") else v for k, v in phi.items()} # phi_old似乎是始终和phi相同
+    # print(f"after slove UEqn {phi[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
+    # print(f"after slove UEqn {phi_old[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
 #     print(f"{U=},{U_old=}")
 #     print(U)
 
     
 def flux(vol_f):
     res = np.zeros(ni)
-    
+    vol_f, vol_f_pair = vol_f[INTERNALFIELD], vol_f
     for face in range(ni):
         p, n = face_owner[face], face_neighbour[face]
-        w = surfaceInterpolation_weights[face]
+        w = surfaceInterpolation_weights[INTERNALFIELD][face]
         face_f = vol_f[n]*(1-w)+vol_f[p]*(w)
         if face_f.size == 1:
             res[face] = face_area_norm[face] * face_f
         else:
             res[face] = np.matmul(face_area[face], face_f)
-    return res
+    res_boundary = np.zeros(nb)
+    for face in range(nb):
+        p = face_owner[face]
+        face_f = vol_f_pair[BOUNDARYFIELD][face]
+        if face_f.size == 1:
+            res_boundary[face] = face_area_norm[ni+face] * face_f
+        else:
+            res_boundary[face] = np.matmul(face_area[ni+face], face_f)
+    return { INTERNALFIELD: res, BOUNDARYFIELD: res_boundary }
 
 def interpolate(U):
+    U_pair, U = U, U[INTERNALFIELD]
     res = np.zeros((ni, *U.shape[1:]))
     for index in range(ni):
         i, j = face_owner[index], face_neighbour[index]
-        w = surfaceInterpolation_weights[index]
+        w = surfaceInterpolation_weights[INTERNALFIELD][index]
         # res[index] = (U[i]+U[j])/2
         res[index] = U[i]*w+(1-w)*U[j]
-    return res
+    res_pair = quick_add_boundary(res)
+    for f in range(nb):
+        res_pair[BOUNDARYFIELD][f] = U[face_owner[ni+f]]
+    return res_pair
 
 def laplacian_base(k):
-    res = [np.zeros(s) for s in (ni, nc, ni)]
-    res += [0,0,0]
+    res = {}
     k_arr = np.zeros(nc)
     k_arr[:] = k
-    k_surface = interpolate(k_arr)
+    k_surface = interpolate(quick_add_boundary(k_arr))[INTERNALFIELD]
 #     print(k)
 #     print(k_surface)
-    res[LOWER] = face_area_norm[:ni] / detla_norm * k_surface
-    res[UPPER] = face_area_norm[:ni] / detla_norm * k_surface
-    for idx in range(len(face_neighbour)):
-        p, n = face_owner[idx], face_neighbour[idx] 
-        res[DIAG][n] -= res[UPPER][idx]
-        res[DIAG][p] -= res[LOWER][idx]
+    res[LOWER] = face_area_norm[:ni] / detla_norm[INTERNALFIELD] * k_surface
+    res[UPPER] = face_area_norm[:ni] / detla_norm[INTERNALFIELD] * k_surface
+    res[DIAG] = -sum_lower_upper(res)
     return res
 
 def div_phi(phi, phi_bound):
@@ -409,63 +530,103 @@ def div_phi(phi, phi_bound):
 def faceH(Eqn):
     res = np.zeros(ni)
     for face in range(ni):
-        res[face] = Eqn[UPPER][face] * p[face_neighbour[face]] - Eqn[LOWER][face] * p[face_owner[face]]
+        res[face] = Eqn[UPPER][face] * p[INTERNALFIELD][face_neighbour[face]] - Eqn[LOWER][face] * p[INTERNALFIELD][face_owner[face]]
     return res
 
 def fvc_grad(p):
     res = np.zeros((nc, 3))
     p_phi_arr = interpolate(p)
     for face in range(ni):
-        w = surfaceInterpolation_weights[face]
-        p_phi = p_phi_arr[face] * face_area[face]
+        p_phi = p_phi_arr[INTERNALFIELD][face] * face_area[face]
         res[face_owner[face]] += p_phi
         res[face_neighbour[face]] -= p_phi
     for face in range(ni, ni+nb):
         if boundary_out_begin <= face-ni < boundary_out_end:
             pass
         else:
-            res[face_owner[face]] += p[face_owner[face]] * face_area[face] # 边界面的压力插强为从属cell的压强
-    return res / Volumes[:, None]
+            res[face_owner[face]] += p[INTERNALFIELD][face_owner[face]] * face_area[face] # 边界面的压力插强为从属cell的压强
+    res = res / Volumes[:, None]
+    res_b = np.zeros((nb, 3))
+    for i in range(nb):
+        res_b[i] = res[face_owner[ni+i]]
+
+    """
+        snGrad:
+            patch_.deltaCoeffs()*(*this - patchInternalField())
+        grad_p_boundary:
+            const vectorField n
+            (
+                vsf.mesh().Sf().boundaryField()[patchi]
+              / vsf.mesh().magSf().boundaryField()[patchi]
+            );
+
+            gGradbf[patchi] += n *
+            (
+                vsf.boundaryField()[patchi].snGrad()
+              - (n & gGradbf[patchi])
+            );
+    """
+    n = face_n[ni:ni+nb]
+    p_boundary_snGrad = (p[BOUNDARYFIELD] - p[INTERNALFIELD][face_owner[ni: ni+nb]]) / detla_norm[BOUNDARYFIELD]
+    tmp = np.matmul(n[:,None,:],res_b[:,:,None]).reshape(nb)
+    res_b += n * (p_boundary_snGrad - tmp)[:, None]
+
+
+    return { INTERNALFIELD: res, BOUNDARYFIELD: res_b }
 
 
 def setReference(celli=0, value=0.0):
     pEqn[SOURCE][celli] += pEqn[DIAG][celli]*value;
     pEqn[DIAG][celli] += pEqn[DIAG][celli];
 
-    
+def quick_add_boundary(field):
+    return { INTERNALFIELD: field, BOUNDARYFIELD: np.zeros((nb, *field.shape[1:])) }
+
+
 def make_pUqn():
     global rAU, HbyA, U_old, U, phiCorr, gama, ddtCorr, interpolate_rAU, phiHbyA, pEqn, div_phiHbyA, pEqn_flux, flux_HbyA, phiHbyA_boundaryField_
     UEqn_local = UEqn.copy()
     UEqn_local[INTERNALCOEFFS] = UEqn_local[INTERNALCOEFFS][:,0] 
-    rAU = 1/getA(UEqn_local)
-    HbyA = rAU[:, None] * getH(UEqn_local)
+    rAU = { k: 1/x for k, x in getA(UEqn_local).items() }
+    HbyA = rAU[INTERNALFIELD][:, None] * getH(UEqn_local)
     global HbyA_boundary
     HbyA_boundary = np.zeros((nb,3))
-    HbyA_boundary[:] = U_boundary
+    HbyA_boundary[:] = U[BOUNDARYFIELD]
     for face_b in range(boundary_out_begin, boundary_out_end):
         HbyA_boundary[face_b] = HbyA[face_owner[face_b+ni]]
+    HbyA = { INTERNALFIELD: HbyA, BOUNDARYFIELD: HbyA_boundary }
+    # phiCorr = phi_old[INTERNALFIELD] - flux(U_old)[INTERNALFIELD] # phi_old 和phi相同
+    phiCorr = handle_all_list2(phi_old, flux(U_old), lambda x, y: x-y)
+    gama = handle_all_list2(phiCorr, phi_old, lambda x, y: 1 - np.minimum(np.abs(x/(y+1e-100)), 1))
+    
+    # 参考源码 待深入了解 if (!U.boundaryField()[patchi].coupled()) { ccbf[patchi] = 0; }
+    # 全是0
+    gama[BOUNDARYFIELD] = 0
 
-    phiCorr = phi_old - flux(U_old) # phi_old 和phi相同
-    gama = 1 - np.minimum(np.abs(phiCorr/(phi_old+1e-100)), 1)
-    ddtCorr = gama * phiCorr / dt
+    # phiCorr[BOUNDARYFIELD] 没问题，但是gama[BOUNDARYFIELD] 全是 0
+    ddtCorr = handle_all_list2(gama, phiCorr, lambda x, y: x * y / dt)
+    # ddtCorr = gama * phiCorr[INTERNALFIELD] / dt
     interpolate_rAU = interpolate(rAU)
     flux_HbyA = flux(HbyA)
-    phiHbyA = flux_HbyA + interpolate_rAU * ddtCorr
+    phiHbyA = flux_HbyA[INTERNALFIELD] + interpolate_rAU[INTERNALFIELD] * ddtCorr[INTERNALFIELD]
 #     phiHbyA = str2arr("(8.3513e-06 0.000120961 -3.6998e-05 -4.27049e-05 -0.00036813 0.000166063 -0.000450094)")
-
-    pEqn = laplacian_base(rAU)
+    pEqn = laplacian_base(rAU[INTERNALFIELD])
     
     phiHbyA_boundaryField_ = (HbyA_boundary * face_area[ni: ni+nb])[:,1]
-    phiHbyA_boundaryField_ = phi_boundaryField_
-    phi_boundaryField_[boundary_out_begin:boundary_out_end] = ((HbyA_boundary * face_area[ni: ni+nb])[:,1])[boundary_out_begin:boundary_out_end]
+    phiHbyA_boundaryField_ = phi[BOUNDARYFIELD].copy()
+    phiHbyA_boundaryField_[boundary_out_begin:boundary_out_end] = ((HbyA_boundary * face_area[ni: ni+nb])[:,1])[boundary_out_begin:boundary_out_end]
+    
     div_phiHbyA = div_phi(phiHbyA, phiHbyA_boundaryField_)
+
+    phiHbyA = { INTERNALFIELD: phiHbyA, BOUNDARYFIELD: phiHbyA_boundaryField_ }
+
     pEqn[SOURCE] = div_phiHbyA
 
     # assert_allclose(pEqn[SOURCE], str2arr("(0.000129312 -4.53493e-05 -0.000531795 0.000245766 0.000418036 -0.000215969)"))
     pEqn[INTERNALCOEFFS] = np.zeros(nb)
     pEqn_VALUEINTERNALCOEFFS = -(np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)
     for face in range(boundary_out_begin, boundary_out_end):
-        pEqn_VALUEINTERNALCOEFFS[face] *= rAU[face_owner[ni+face]]
+        pEqn_VALUEINTERNALCOEFFS[face] *= rAU[INTERNALFIELD][face_owner[ni+face]]
     pEqn[INTERNALCOEFFS][boundary_out_begin:boundary_out_end] = pEqn_VALUEINTERNALCOEFFS[boundary_out_begin:boundary_out_end]
     
     pEqn[BOUNDARYCOEFFS] = np.zeros(nb)
@@ -478,30 +639,37 @@ def make_pUqn():
    
 
 def slove_p():
-    global p_star, pEqn_flux, U_2, phi_old, phi, U_old, U, p, p_old 
+    global p_star, pEqn_flux, U_2, phi_old, phi, U_old, U, p
     p_star = np.linalg.solve(*makeMtx(pEqn))
 #     p_star += [0.0198326,  7.89335e-07][piso_loop]
 #         print("p_star", p_star)
     # assert_allclose(p_star, str2arr("(0.000469259 -0.10172 1.80042 -0.761427 -2.30892 0.824955)"))
-    p, p_old = p_star, p
+    p[INTERNALFIELD] = p_star
+    for t, l, r in zip(boundary_p_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            for f in range(l, r):
+                p[BOUNDARYFIELD][f-first] = p[INTERNALFIELD][face_owner[f]]
+
 
 def update_pu():
-    global p_star, pEqn_flux, U_2, phi_old, phi, U_old, U, p, p_old, phi_new, fvc_grad_p, U_boundary
+    global p_star, pEqn_flux, U_2, phi_old, phi, U_old, U, p, phi_new, fvc_grad_p, U_boundary
 
     pEqn_flux = faceH(pEqn)
 
-    phi_new = phiHbyA - pEqn_flux
+    phi_new = phiHbyA[INTERNALFIELD] - pEqn_flux
     fvc_grad_p = fvc_grad(p)
-    U_2 = HbyA - rAU.reshape(nc,1)*fvc_grad_p
-    phi = phi_new
-#     U_old, U = U, U_2
-    U = U_2 # 这里不更新U_old
+    U_2 = HbyA[INTERNALFIELD] - rAU[INTERNALFIELD].reshape(nc,1)*fvc_grad_p[INTERNALFIELD]
+    phi[INTERNALFIELD] = phi_new
+    # U_old, U = U, U_2
+    U[INTERNALFIELD] = U_2 # 这里不更新U_old
     for face in range(boundary_out_begin, boundary_out_end):
-        U_boundary[face] = U[face_owner[ni+face]]
+        U[BOUNDARYFIELD][face] = U[INTERNALFIELD][face_owner[ni+face]]
 
-    update_phi_boundary(phi, phi_boundaryField_)
+    update_phi_boundary(phi)
 
-def update_phi_boundary(phi, phi_boundaryField_):
+def update_phi_boundary(phi):
+    phi, phi_boundaryField_ = phi[INTERNALFIELD], phi[BOUNDARYFIELD]
     phi_boundaryField_[boundary_out_begin: boundary_out_end] = 0
     for face_b in range(boundary_out_begin, boundary_out_end):
         cell = face_owner[ni+face_b]
