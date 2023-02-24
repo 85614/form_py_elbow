@@ -66,6 +66,9 @@ constexpr auto hexfloat = ios_base::fixed | ios_base::scientific;
 #include "specialization/fvMatrix_A.H"
 #include "specialization/ddtCorr.H"
 #include "specialization/grad.H"
+#include "specialization/fvmLaplacian.H"
+#include "specialization/fvMatrix_flux.H"
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main(int argc, char *argv[])
@@ -97,7 +100,8 @@ int main(int argc, char *argv[])
     SET("", mesh.cellVolumes());
     SET("", mesh.delta().ref());
     SET("", mesh.deltaCoeffs());
-
+    SET("", mesh.nonOrthDeltaCoeffs());
+    SET("", mesh.nonOrthCorrectionVectors());
     SET("", phi.mesh().surfaceInterpolation::weights());
     SET("", phi.mesh().nonOrthDeltaCoeffs());
     
@@ -156,6 +160,7 @@ int main(int argc, char *argv[])
     {
         ++loop_count;
         use_info = loop_count <= 5;
+
         print("print('\\nloop ", loop_count, "')");
         Info<< "Time = " << runTime.userTimeName() << nl << endl;
 
@@ -163,14 +168,14 @@ int main(int argc, char *argv[])
 
         // Momentum predictor
 
+        print("make_UEqn()");
+        
         fvVectorMatrix UEqn
         (
             fvm::ddt(U)
           + fvm::div(phi, U)
           - fvm::laplacian(nu, U)
         );
-        
-        print("make_UEqn()");
 
         CHECK("Eqn tmp-var", "ddt_U", fvm::ddt(U).ref());
         // CHECK("", "phi", phi);
@@ -231,8 +236,8 @@ int main(int argc, char *argv[])
             CHECK("tmp-var", "ddtCorr", fvc::ddtCorr(U, phi).ref());
 
             CHECK("tmp-var", "phiHbyA", phiHbyA);
-            CHECK("boundary", "HbyA_boundary", HbyA.boundaryField());
-            CHECK("boundary", "phiHbyA_boundaryField_", phiHbyA.boundaryField());
+            // CHECK("boundary", "HbyA_boundary", HbyA.boundaryField());
+            // CHECK("boundary", "phiHbyA_boundaryField_", phiHbyA.boundaryField());
 
             // Non-orthogonal pressure corrector loop
             while (piso.correctNonOrthogonal())
