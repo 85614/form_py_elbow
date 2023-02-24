@@ -406,30 +406,31 @@ def make_UEqn():
     div_phi_U[DIAG] = -sum_lower_upper(div_phi_U) 
     div_phi_U[SOURCE] = 0
     div_phi_U[BOUNDARYCOEFFS] = -np.sum(U[BOUNDARYFIELD] * face_area_boundary, axis=1)[:,None]*U[BOUNDARYFIELD]
-    div_phi_U[BOUNDARYCOEFFS][boundary_out_begin:boundary_out_end] = 0
     div_phi_U[INTERNALCOEFFS] = np.zeros((nb, 3))
-    for face in range(boundary_out_begin, boundary_out_end):
-        div_phi_U[INTERNALCOEFFS][face] = phi[BOUNDARYFIELD][face]
-        # print(U[face_owner[face+ni]])
-    # print(f"{logdata['U_boundaryField_'][-1][boundary_out_begin:boundary_out_end]=}")
-    # if (len(logdata['U_boundaryField_'])) >= 2:
-        # print(f"{logdata['U_boundaryField_'][-2][boundary_out_begin:boundary_out_end]=}")
+
+    for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            l, r = l-first, r-first
+            div_phi_U[INTERNALCOEFFS][l:r] = phi[BOUNDARYFIELD].reshape(nb, 1)[l:r]
+            div_phi_U[BOUNDARYCOEFFS][l:r] = 0
+
     laplacian_nu_U = {}
 
-    laplacian_nu_U[UPPER] = nu * np.linalg.norm(face_area[:ni], axis=1)/d_cell[INTERNALFIELD]
-    laplacian_nu_U[LOWER] = laplacian_nu_U[UPPER].copy()
-    laplacian_nu_U[DIAG] = -sum_lower_upper(laplacian_nu_U)
-    laplacian_nu_U[SOURCE] = 0
-    
-    laplacian_nu_U[INTERNALCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)[:,None]
-    laplacian_nu_U[INTERNALCOEFFS][boundary_out_begin:boundary_out_end] = 0
-    laplacian_nu_U[BOUNDARYCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)[:,None]*U[BOUNDARYFIELD]
-    laplacian_nu_U[BOUNDARYCOEFFS][boundary_out_begin:boundary_out_end] = 0
-    # print(laplacian_nu_U[INTERNALCOEFFS])
 
+    laplacian_nu_U = laplacian_base(nu, U)
+    
+    laplacian_nu_U[INTERNALCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) * mesh_nonOrthDeltaCoeffs_[BOUNDARYFIELD])[:,None]
+    laplacian_nu_U[BOUNDARYCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) * mesh_nonOrthDeltaCoeffs_[BOUNDARYFIELD])[:,None]*U[BOUNDARYFIELD]
+    for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            l, r = l-first, r-first
+            laplacian_nu_U[INTERNALCOEFFS][l:r] = 0
+            laplacian_nu_U[BOUNDARYCOEFFS][l:r] = 0
     for Eqn in (ddt_U, div_phi_U, laplacian_nu_U):
         for x, y in zip((LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS), (ni, nc, ni, (nc,3), (nb,3), (nb,3))):
-            Eqn[x] = Eqn[x] + np.zeros(y)
+            Eqn[x] = np.broadcast_to(Eqn[x], y)
 
     
     UEqn = ddt_U.copy()
@@ -456,13 +457,7 @@ def make_U_momentumPredictor():
     U_momentumPredictor = { INTERNALFIELD: U_momentumPredictor, BOUNDARYFIELD: U[BOUNDARYFIELD].copy()}
     update_U_boundary(U_momentumPredictor)
     U, U_old = U_momentumPredictor, U
-    # print(f"after slove UEqn {U[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
-    # print(f"after slove UEqn {U_old[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
     phi_old = {k: v.copy() if not k.startswith("_") else v for k, v in phi.items()} # phi_old似乎是始终和phi相同
-    # print(f"after slove UEqn {phi[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
-    # print(f"after slove UEqn {phi_old[BOUNDARYFIELD][boundary_out_begin:boundary_out_end]=}")
-#     print(f"{U=},{U_old=}")
-#     print(U)
 
     
 def flux(vol_f):
@@ -499,16 +494,33 @@ def interpolate(U):
         res_pair[BOUNDARYFIELD][f] = U[face_owner[ni+f]]
     return res_pair
 
-def laplacian_base(k):
+def laplacian_base(k, vf):
     res = {}
-    k_arr = np.zeros(nc)
-    k_arr[:] = k
-    k_surface = interpolate(quick_add_boundary(k_arr))[INTERNALFIELD]
-#     print(k)
-#     print(k_surface)
-    res[LOWER] = face_area_norm[:ni] / detla_norm[INTERNALFIELD] * k_surface
-    res[UPPER] = face_area_norm[:ni] / detla_norm[INTERNALFIELD] * k_surface
+    if type(k) != dict:
+        k = { INTERNALFIELD: np.full(ni, k), BOUNDARYFIELD: np.full(nb, k) }
+    k_surface = interpolate(k)
+
+    res[LOWER] = face_area_norm[:ni] * mesh_nonOrthDeltaCoeffs_[INTERNALFIELD] * k_surface[INTERNALFIELD]
+    res[UPPER] = face_area_norm[:ni] * mesh_nonOrthDeltaCoeffs_[INTERNALFIELD] * k_surface[INTERNALFIELD]
     res[DIAG] = -sum_lower_upper(res)
+    res[SOURCE] = 0
+
+    grad_vf = fvc_grad(vf)
+    grad_vf_f = interpolate(grad_vf)
+    
+    # grad_vf_f = handle_all_list2(mesh_nonOrthCorrectionVectors_, grad_vf_f, lambda x, y: np.matmul(x.reshape(-1, 1, 3), y.reshape(-1, 3, 3)).reshape(-1,3))
+    for k, nn in zip([INTERNALFIELD, BOUNDARYFIELD], [ni, nb]):
+        grad_vf_f[k] = np.matmul(mesh_nonOrthCorrectionVectors_[k].reshape(nn, 1, 3), grad_vf_f[k].reshape(nn, 3, -1)).reshape(nn, -1)
+    
+    grad_vf_phi = { 
+                INTERNALFIELD: k_surface[INTERNALFIELD].reshape(ni, 1) * face_area_norm[:ni].reshape(ni, 1) * grad_vf_f[INTERNALFIELD].reshape(ni, -1), 
+                BOUNDARYFIELD: k_surface[BOUNDARYFIELD].reshape(nb, 1) * face_area_norm[ni:ni+nb].reshape(nb, 1) * grad_vf_f[BOUNDARYFIELD].reshape(nb, -1) 
+                }
+    global Eqn_faceFluxCorrectionPtr
+    Eqn_faceFluxCorrectionPtr = handle_all_list(grad_vf_phi, lambda x: x.reshape(x.shape[0]) if x.shape[-1] == 1 else x )
+    div_vf_correction =  div_phi(grad_vf_phi[INTERNALFIELD], grad_vf_phi[BOUNDARYFIELD])
+    res[SOURCE] -= div_vf_correction
+    res[SOURCE].resize(vf[INTERNALFIELD].shape)
     return res
 
 def div_phi(phi, phi_bound):
@@ -531,22 +543,25 @@ def faceH(Eqn):
     res = np.zeros(ni)
     for face in range(ni):
         res[face] = Eqn[UPPER][face] * p[INTERNALFIELD][face_neighbour[face]] - Eqn[LOWER][face] * p[INTERNALFIELD][face_owner[face]]
+    res_b = np.zeros(nb)
+    for face in range(nb):
+        res_b[face] = Eqn[INTERNALCOEFFS][face] * p[INTERNALFIELD][face_owner][ni+face] - Eqn[BOUNDARYCOEFFS][face]
+    res = { INTERNALFIELD: res, BOUNDARYFIELD: res_b }
+    res = handle_all_list2(res, Eqn_faceFluxCorrectionPtr, lambda x, y: x + y)
     return res
 
-def fvc_grad(p):
-    res = np.zeros((nc, 3))
-    p_phi_arr = interpolate(p)
+def fvc_grad(vf):
+    res = np.zeros(vf[INTERNALFIELD].size*3).reshape(nc, 3, -1) # (nc, -1, 3)
+    p_f_arr = interpolate(vf)
     for face in range(ni):
-        p_phi = p_phi_arr[INTERNALFIELD][face] * face_area[face]
+        p_phi = face_area[face].reshape(3, 1) * p_f_arr[INTERNALFIELD][face].reshape(1, -1) # (-1, 1) * (3) => (-1, 3)
         res[face_owner[face]] += p_phi
         res[face_neighbour[face]] -= p_phi
     for face in range(ni, ni+nb):
-        if boundary_out_begin <= face-ni < boundary_out_end:
-            pass
-        else:
-            res[face_owner[face]] += p[INTERNALFIELD][face_owner[face]] * face_area[face] # 边界面的压力插强为从属cell的压强
+        res[face_owner[face]] += face_area[face].reshape(3,1) * vf[BOUNDARYFIELD][face-ni].reshape(1, -1)
+    res = res.reshape(nc, -1)
     res = res / Volumes[:, None]
-    res_b = np.zeros((nb, 3))
+    res_b = np.zeros((nb, res.shape[1]))
     for i in range(nb):
         res_b[i] = res[face_owner[ni+i]]
 
@@ -567,9 +582,9 @@ def fvc_grad(p):
             );
     """
     n = face_n[ni:ni+nb]
-    p_boundary_snGrad = (p[BOUNDARYFIELD] - p[INTERNALFIELD][face_owner[ni: ni+nb]]) / detla_norm[BOUNDARYFIELD]
-    tmp = np.matmul(n[:,None,:],res_b[:,:,None]).reshape(nb)
-    res_b += n * (p_boundary_snGrad - tmp)[:, None]
+    p_boundary_snGrad = (vf[BOUNDARYFIELD] - vf[INTERNALFIELD][face_owner[ni: ni+nb]]).reshape(nb, 1, -1) / detla_norm[BOUNDARYFIELD].reshape(nb, 1, 1) # (nb, -1, 1)
+    tmp = np.matmul(n.reshape(nb, 1, 3), res_b.reshape(nb, 3, -1)) # (nb, 1, -1)
+    res_b += (n.reshape(nb, 3, 1) * (p_boundary_snGrad - tmp)).reshape(nb, -1)
 
 
     return { INTERNALFIELD: res, BOUNDARYFIELD: res_b }
@@ -592,8 +607,11 @@ def make_pUqn():
     global HbyA_boundary
     HbyA_boundary = np.zeros((nb,3))
     HbyA_boundary[:] = U[BOUNDARYFIELD]
-    for face_b in range(boundary_out_begin, boundary_out_end):
-        HbyA_boundary[face_b] = HbyA[face_owner[face_b+ni]]
+    for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            HbyA_boundary[l-first:r-first] = HbyA[face_owner[l:r]]
+
     HbyA = { INTERNALFIELD: HbyA, BOUNDARYFIELD: HbyA_boundary }
     # phiCorr = phi_old[INTERNALFIELD] - flux(U_old)[INTERNALFIELD] # phi_old 和phi相同
     phiCorr = handle_all_list2(phi_old, flux(U_old), lambda x, y: x-y)
@@ -610,25 +628,28 @@ def make_pUqn():
     flux_HbyA = flux(HbyA)
     phiHbyA = flux_HbyA[INTERNALFIELD] + interpolate_rAU[INTERNALFIELD] * ddtCorr[INTERNALFIELD]
 #     phiHbyA = str2arr("(8.3513e-06 0.000120961 -3.6998e-05 -4.27049e-05 -0.00036813 0.000166063 -0.000450094)")
-    pEqn = laplacian_base(rAU[INTERNALFIELD])
+    pEqn = laplacian_base(rAU, p)
     
-    phiHbyA_boundaryField_ = (HbyA_boundary * face_area[ni: ni+nb])[:,1]
-    phiHbyA_boundaryField_ = phi[BOUNDARYFIELD].copy()
-    phiHbyA_boundaryField_[boundary_out_begin:boundary_out_end] = ((HbyA_boundary * face_area[ni: ni+nb])[:,1])[boundary_out_begin:boundary_out_end]
+    phiHbyA_boundaryField_ = np.matmul(HbyA_boundary.reshape(nb, 1, 3), face_area[ni: ni+nb].reshape(nb, 3, 1)).reshape(nb)
     
     div_phiHbyA = div_phi(phiHbyA, phiHbyA_boundaryField_)
 
     phiHbyA = { INTERNALFIELD: phiHbyA, BOUNDARYFIELD: phiHbyA_boundaryField_ }
 
-    pEqn[SOURCE] = div_phiHbyA
+    pEqn[SOURCE] += div_phiHbyA
 
     # assert_allclose(pEqn[SOURCE], str2arr("(0.000129312 -4.53493e-05 -0.000531795 0.000245766 0.000418036 -0.000215969)"))
     pEqn[INTERNALCOEFFS] = np.zeros(nb)
-    pEqn_VALUEINTERNALCOEFFS = -(np.linalg.norm(face_area[ni:ni+nb], axis=1) / d_cell_bounday)
-    for face in range(boundary_out_begin, boundary_out_end):
-        pEqn_VALUEINTERNALCOEFFS[face] *= rAU[INTERNALFIELD][face_owner[ni+face]]
-    pEqn[INTERNALCOEFFS][boundary_out_begin:boundary_out_end] = pEqn_VALUEINTERNALCOEFFS[boundary_out_begin:boundary_out_end]
+    pEqn_VALUEINTERNALCOEFFS = -(np.linalg.norm(face_area[ni:ni+nb], axis=1) * mesh_nonOrthDeltaCoeffs_[BOUNDARYFIELD])
+    pEqn_VALUEINTERNALCOEFFS *= rAU[INTERNALFIELD][face_owner[ni: ni+nb]]
     
+    for t, l, r in zip(boundary_p_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            pass
+        elif t == fixedValue:
+            l, r = l-first, r-first
+            pEqn[INTERNALCOEFFS][l: r] = pEqn_VALUEINTERNALCOEFFS[l:r]
     pEqn[BOUNDARYCOEFFS] = np.zeros(nb)
 
 #         phiHbyA_expected = str2arr("(8.3513e-06 0.000120961 -3.6998e-05 -4.27049e-05 -0.00036813 0.000166063 -0.000450094)")
@@ -657,30 +678,16 @@ def update_pu():
 
     pEqn_flux = faceH(pEqn)
 
-    phi_new = phiHbyA[INTERNALFIELD] - pEqn_flux
+    phi_new = handle_all_list2(phiHbyA, pEqn_flux, lambda x, y: x - y)
     fvc_grad_p = fvc_grad(p)
     U_2 = HbyA[INTERNALFIELD] - rAU[INTERNALFIELD].reshape(nc,1)*fvc_grad_p[INTERNALFIELD]
-    phi[INTERNALFIELD] = phi_new
+    phi = phi_new
     # U_old, U = U, U_2
     U[INTERNALFIELD] = U_2 # 这里不更新U_old
-    for face in range(boundary_out_begin, boundary_out_end):
-        U[BOUNDARYFIELD][face] = U[INTERNALFIELD][face_owner[ni+face]]
-
-    update_phi_boundary(phi)
-
-def update_phi_boundary(phi):
-    phi, phi_boundaryField_ = phi[INTERNALFIELD], phi[BOUNDARYFIELD]
-    phi_boundaryField_[boundary_out_begin: boundary_out_end] = 0
-    for face_b in range(boundary_out_begin, boundary_out_end):
-        cell = face_owner[ni+face_b]
-        for face_i in range(ni):
-            if face_owner[face_i] == cell:
-                phi_boundaryField_[face_b] += -phi[face_i]
-                # print(face_b, -phi[face_i])
-            elif face_neighbour[face_i] == cell:
-                phi_boundaryField_[face_b] += phi[face_i]
-
-#     print(f"{U=},{U_old=}")
+    for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
+        first = boundary_start[0]
+        if t == zeroGradient:
+            U[BOUNDARYFIELD][l-first:r-first] = U[INTERNALFIELD][face_owner[l:r]]
     
 ################################################################
 ################################################################
@@ -716,8 +723,6 @@ def run_times_control(times, fun):
     return fun
 make_pUqn = run_times_control(3, make_pUqn)
 
-# 出口边界，因为只有出口边界是特殊的，所以暂时这样处理，后续实现通用的方案
-boundary_out_begin, boundary_out_end = 112, 120
 
 myrtol = 1e-6
 myatol = 1e-8
