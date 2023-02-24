@@ -66,15 +66,23 @@ template <typename Type>
 Ostream &print2py(Ostream &os, const fvMatrix<Type> &fvm)
 {
 
-    os << "[";
+    os << "{\n";
+    os << "'_type': '" << fvm.typeName <<"',\n";  
+    // os << "'_name': '" << fvm.name() <<"',\n";  
+    os << "'lower': ";
     (fvm.hasLower() ? print2pylist(os, fvm.lower()) : os << "0") << ",\n";
+    os << "'diag': ";
     (fvm.hasDiag() ? print2pylist(os, fvm.diag()) : os << "0") << ",\n";
+    os << "'upper': ";
     (fvm.hasUpper() ? print2pylist(os, fvm.upper()) : os << "0") << ",\n";
+    os << "'source': ";
     print2py(os, fvm.source()) << ",\n";
     auto &rfvm = const_cast<fvMatrix<Type> &>(fvm);
+    os << "'internalCoeffs': ";
     print2py(os, rfvm.internalCoeffs()) << ",\n";
-    print2py(os, rfvm.boundaryCoeffs());
-    os << "]";
+    os << "'boundaryCoeffs': ";
+    print2py(os, rfvm.boundaryCoeffs()) << "\n";
+    os << "}";
 
     os.check("pyOstream& operator<<(pyOstream&, fvMatrix<Type>&");
 
@@ -99,14 +107,19 @@ Ostream &print2pylist(Ostream &os, const ListType &list)
 }
 
 
-// template<class Type, template<class> class PatchField, class GeoMesh>
-// Ostream &print2py(Ostream &os, const Foam::GeometricField<Type, PatchField, GeoMesh> &_GeometricField)
-// {
-//     os << "[";
-//     print2py(os, _GeometricField.internalField()) << ",\n";
-//     print2py(os, _GeometricField.boundaryField()) << "\n]})";
-//     return os;
-// }
+template<class Type, template<class> class PatchField, class GeoMesh>
+Ostream &print2py(Ostream &os, const Foam::GeometricField<Type, PatchField, GeoMesh> &_GeometricField)
+{
+    os << "{\n";
+    os << "'_type': '" << _GeometricField.type() <<"',\n";
+    os << "'_name': '" << _GeometricField.name() <<"',\n";
+    os << "'internalField': ";
+    print2py(os, _GeometricField.internalField()) << ",\n";
+    os << "'boundaryField': ";
+    print2py(os, _GeometricField.boundaryField()) << "\n";
+    os << "}";
+    return os;
+}
 
 
 

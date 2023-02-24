@@ -32,7 +32,7 @@ Description
 #include "fvCFD.H"
 #include "pisoControl.H"
 #include "changeIO2.H"
-// #include "myFun.H"
+
 
 bool use_info = true;
 
@@ -61,7 +61,11 @@ void print(_Args &&...args)
 constexpr auto hexfloat = ios_base::fixed | ios_base::scientific;
 
 #define PRINT(x) (void)(Info << #x " begin\n" << (x) << "\n" #x " end" << endl)
+#define PRINT_EXPR(x) (void)(Info << #x " = " << (x) << endl)
 
+#include "specialization/fvMatrix_A.H"
+#include "specialization/ddtCorr.H"
+#include "specialization/grad.H"
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main(int argc, char *argv[])
@@ -92,11 +96,11 @@ int main(int argc, char *argv[])
     SET("", mesh.faceNeighbour());
     SET("", mesh.cellVolumes());
     SET("", mesh.delta().ref());
+    SET("", mesh.deltaCoeffs());
 
     SET("", phi.mesh().surfaceInterpolation::weights());
     SET("", phi.mesh().nonOrthDeltaCoeffs());
     
-    SET("boundary", mesh.delta().ref().boundaryField());
     SET("", runTime.deltaT().value());
     SET("", nu.value());
 
@@ -111,7 +115,7 @@ int main(int argc, char *argv[])
     {
         List<label> boundary_start;
         List<label> boundary_end;
-        
+
         for (auto &b : mesh.boundary())
         {
 
@@ -122,7 +126,6 @@ int main(int argc, char *argv[])
         SET("", boundary_end);
     }
 
-    SET("boundary", U.boundaryField());
     {
         List<word> boundary_u_type;
         List<word> boundary_p_type;
@@ -139,15 +142,9 @@ int main(int argc, char *argv[])
     }
     SET("", U);
     SET("", p);
-    SET("boundary", p.boundaryField());
     SET("", phi);
-    SET("boundary", phi.boundaryField());
-    
 
     print("init_variable()");
-
-    CHECK("", "face_area_norm[:ni]", mesh.magSf());
-   
 
     // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -185,23 +182,25 @@ int main(int argc, char *argv[])
         // CHECK("tmp-var", "laplacian_nu_U[SOURCE]", fvm::laplacian(nu, U).ref().source());
         // CHECK("tmp-var boundary", "laplacian_nu_U[BOUNDARYCOEFFS]", fvm::laplacian(nu, U).ref().boundaryCoeffs());
         // CHECK("tmp-var boundary 3->1", "laplacian_nu_U[INTERNALCOEFFS]", fvm::laplacian(nu, U).ref().internalCoeffs());
-        
+
         CHECK("Eqn laplacian tmp-var", "laplacian_nu_U", fvm::laplacian(nu, U).ref());
         CHECK("Eqn", "UEqn", UEqn);
 
+        print("make_U_momentumPredictor()");
+        
         if (piso.momentumPredictor())
         {
             solve(UEqn == -fvc::grad(p));
         }
 
-        print("make_U_momentumPredictor()");
+        CHECK("", "fvc_grad_p", fvc::grad(p).ref());
         CHECK("", "U", U);
-        LOG("boundary", U.boundaryField());
 
         // --- PISO loop
         while (piso.correct())
         {
-            
+            print("make_pUqn()");
+
             volScalarField rAU(1.0/UEqn.A());
             volVectorField HbyA(constrainHbyA(rAU*UEqn.H(), U, p));
             // PRINT(HbyA.boundaryField());
@@ -223,7 +222,6 @@ int main(int argc, char *argv[])
             // PRINT(phiHbyA.boundaryField());
 
             // SET("boundary", phiHbyA.boundaryField());
-            print("make_pUqn()");
 
             CHECK("tmp-var", "rAU", rAU);
             CHECK("tmp-var", "HbyA", HbyA);
@@ -260,8 +258,6 @@ int main(int argc, char *argv[])
 
                 print("slove_p()");
                 CHECK("", "p", p);
-                
-                LOG("boundary", p.boundaryField());
 
                 print("update_pu()");
 
@@ -271,7 +267,6 @@ int main(int argc, char *argv[])
                 }
 
                 CHECK("", "phi", phi);
-                CHECK("boundary", "phi_boundaryField_", phi.boundaryField());
 
             }
 
@@ -284,7 +279,6 @@ int main(int argc, char *argv[])
 
             U.correctBoundaryConditions();
             CHECK("", "U", U);
-            CHECK("boundary", "U_boundary", U.boundaryField());
         }
 
         runTime.write();

@@ -1,0 +1,17 @@
+.vscode
+icoFoam.exe
+icoFoam/Make/linux64GccDPInt32Opt/
+icoFoamPy/__pycache__/
+elbow/1/
+elbow/10/
+elbow/2/
+elbow/3/
+elbow/4/
+elbow/5/
+elbow/6/
+elbow/7/
+elbow/8/
+elbow/9/
+elbow/constant/polyMesh/
+elbow/fluentInterface/
+elbow/log.*
