@@ -15,3 +15,11 @@ elbow/9/
 elbow/constant/polyMesh/
 elbow/fluentInterface/
 elbow/log.*
+
+cavity/0.1/
+cavity/0.2/
+cavity/0.3/
+cavity/0.4/
+cavity/0.5/
+cavity/constant/polyMesh/
+cavity/log.*

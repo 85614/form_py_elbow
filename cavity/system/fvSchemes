@@ -22,19 +22,18 @@ ddtSchemes
 gradSchemes
 {
     default         Gauss linear;
+    grad(p)         Gauss linear;
 }
 
 divSchemes
 {
     default         none;
-    // div(phi,U)      Gauss linear;
-    div(phi,U)      Gauss limitedLinearV 1;
+    div(phi,U)      Gauss linear;
 }
 
 laplacianSchemes
 {
-    // default         Gauss linear orthogonal;
-    default         Gauss linear corrected;
+    default         Gauss linear orthogonal;
 }
 
 interpolationSchemes
@@ -44,8 +43,7 @@ interpolationSchemes
 
 snGradSchemes
 {
-    // default         orthogonal;
-    default         corrected;
+    default         orthogonal;
 }
 
 

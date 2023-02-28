@@ -27,20 +27,31 @@ icoFoam的日志文件 `elbow/log.icoFoam.exe` 已经被改成了一个可执行
 
 分别是前面提到的`elbow/log.icoFoam.exe`及其执行结果的备份
 
-### 选项
-新增use-cavity分支，使用cavity case，可以自己调整网格数量，网格简单，方便查看数据
+### 其他
+旧的master分支在old-master分支上,新的master分支,补充完善了中间变量边界部分的数据
+
+目前已将cavity和elbow两个case用到的scheme都已经复现了,主要是以下两个scheme
+```
+divSchemes
+{
+    default         none;
+    // div(phi,U)      Gauss linear;
+    div(phi,U)      Gauss limitedLinearV 1;
+}
+
+laplacianSchemes
+{
+    // default         Gauss linear orthogonal;
+    default         Gauss linear corrected;
+}
+```
+
+除此之外,在cavity和elbow之间进行切换,以及修改elbow的scheme,并不需要再修改base_elbow.py才能正常运行
 
 在 constant/physicalProperties 可以修改hexfloat以确定是否使用十六进制浮点数打印
 
 vscode 使用`alt+z`可是切换是否多行显示长行
 
-使用正则表达式`^'''(.|\n)*?'''`查找，可以把生成的log里的大量 `''' xxx '''` 给选中，然后替换成空
+想要把的log里的大量 `''' xxx '''`删除的话,可以使用正则表达式`^'''(.|\n)*?'''`查找
 
-### 使用cavity案例查看数据
-使用use-cavity分支
-
-在 cavity/constant/physicalProperties 可以修改hexfloat以确定是否使用十六进制浮点数打印
-
-在 cavity/system/blockMeshDict 设置网格的密度，目前已将`20*20*1`改成了`2*3*1`
-
-在 icoFoamPy/base_elbow.py  修改 `boundary_out_begin`和` boundary_out_end`，有说明
+在 cavity/system/blockMeshDict 设置cavity网格的密度，目前已将`20*20*1`改成了`2*3*1`

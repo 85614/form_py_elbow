@@ -36,7 +36,6 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::evaluate()
             Pstream::waitRequests(nReq);
         }
 
-        InfoInFunction;
         forAll(*this, patchi)
         {
             this->operator[](patchi).evaluate(Pstream::defaultCommsType);

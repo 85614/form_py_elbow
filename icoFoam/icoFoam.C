@@ -55,19 +55,20 @@ void print(_Args &&...args)
         __print("'''\n", std::forward<_Args>(args)..., "\n'''\n"); // 默认end="\n"
     }
 }
-#define LOG(msg, x) print("log(" #msg ", \""  #x "\",\n", (x), ")")
-#define SET(msg, x) print("set(" #msg ", \""  #x "\",\n", (x), ")")
-#define CHECK(msg, var_name, true_value) print("check(msg=", #msg, ", var=" #var_name ", foam_var=\"" #true_value "\", expected=\n", (true_value), ")")
+#define LOG(msg, x) print("log(" #msg ", '"  #x "',\n", (x), ")")
+#define SET(msg, x) print("set(" #msg ", '"  #x "',\n", (x), ")")
+#define CHECK(msg, var_name, true_value) print("check(msg=", #msg, ", var=" #var_name ", foam_var='" #true_value "', expected=\n", (true_value), ")")
 constexpr auto hexfloat = ios_base::fixed | ios_base::scientific;
 
 #define PRINT(x) (void)(Info << #x " begin\n" << (x) << "\n" #x " end" << endl)
 #define PRINT_EXPR(x) (void)(Info << #x " = " << (x) << endl)
 
-#include "specialization/fvMatrix_A.H"
-#include "specialization/ddtCorr.H"
-#include "specialization/grad.H"
-#include "specialization/fvmLaplacian.H"
-#include "specialization/fvMatrix_flux.H"
+// #include "specialization/fvMatrix_A.H"
+// #include "specialization/ddtCorr.H"
+// #include "specialization/grad.H"
+// #include "specialization/fvmLaplacian.H"
+// #include "specialization/fvMatrix_flux.H"
+// #include "specialization/fvmDiv.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -102,20 +103,13 @@ int main(int argc, char *argv[])
     SET("", mesh.deltaCoeffs());
     SET("", mesh.nonOrthDeltaCoeffs());
     SET("", mesh.nonOrthCorrectionVectors());
-    SET("", phi.mesh().surfaceInterpolation::weights());
-    SET("", phi.mesh().nonOrthDeltaCoeffs());
+    SET("", mesh.surfaceInterpolation::weights());
     
     SET("", runTime.deltaT().value());
     SET("", nu.value());
-
-    // PRINT(U);
-    // PRINT(U.boundaryField());
-    // PRINT(p);
-    // PRINT(p.boundaryField());
-    // PRINT(phi);
-    // PRINT(phi.boundaryField());
-    // Info << U;
-    // Info << U.boundaryField();
+    
+    SET("", mesh.schemes().div("div(phi,U)"));
+    SET("", mesh.schemes().laplacian("laplacian(nu,U)"));
     {
         List<label> boundary_start;
         List<label> boundary_end;
@@ -178,16 +172,8 @@ int main(int argc, char *argv[])
         );
 
         CHECK("Eqn tmp-var", "ddt_U", fvm::ddt(U).ref());
-        // CHECK("", "phi", phi);
-        CHECK("Eqn tmp-var", "div_phi_U", fvm::div(phi, U).ref());
-        // PRINT(fvm::laplacian(nu, U).ref());
-        // PRINT(U);
-        // CHECK("tmp-var", "laplacian_nu_U[UPPER]", fvm::laplacian(nu, U).ref().upper());
-        // CHECK("tmp-var", "laplacian_nu_U[DIAG]", fvm::laplacian(nu, U).ref().diag());
-        // CHECK("tmp-var", "laplacian_nu_U[SOURCE]", fvm::laplacian(nu, U).ref().source());
-        // CHECK("tmp-var boundary", "laplacian_nu_U[BOUNDARYCOEFFS]", fvm::laplacian(nu, U).ref().boundaryCoeffs());
-        // CHECK("tmp-var boundary 3->1", "laplacian_nu_U[INTERNALCOEFFS]", fvm::laplacian(nu, U).ref().internalCoeffs());
 
+        CHECK("Eqn tmp-var", "div_phi_U", fvm::div(phi, U).ref());
         CHECK("Eqn laplacian tmp-var", "laplacian_nu_U", fvm::laplacian(nu, U).ref());
         CHECK("Eqn", "UEqn", UEqn);
 
@@ -208,10 +194,7 @@ int main(int argc, char *argv[])
 
             volScalarField rAU(1.0/UEqn.A());
             volVectorField HbyA(constrainHbyA(rAU*UEqn.H(), U, p));
-            // PRINT(HbyA.boundaryField());
-            // PRINT(U.boundaryField());
-            // print2py(Info, U.boundaryField()[3]);
-            // PRINT(phi.boundaryField());
+
             surfaceScalarField phiHbyA
             (
                 "phiHbyA",
@@ -248,7 +231,6 @@ int main(int argc, char *argv[])
                 (
                     fvm::laplacian(rAU, p) == fvc::div(phiHbyA)
                 );
-                PRINT("laplacian(" + rAU.name() + ',' + p.name() + ')');
                 
                 // CHECK("tmp-var", "div_phiHbyA", fvc::div(phiHbyA).ref()); // 不能check
                 CHECK("tmp-var laplacian Eqn", "pEqn", pEqn);

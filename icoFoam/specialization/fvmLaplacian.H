@@ -63,7 +63,7 @@ Foam::fv::gaussGrad<Type>::calcGrad
 
     correctBoundaryConditions(vsf, gGrad);
 
-    PRINT(tgGrad.ref().boundaryField());
+    // PRINT(tgGrad.ref().boundaryField());
 
     return tgGrad;
 }
@@ -131,7 +131,7 @@ Foam::fv::gaussLaplacianScheme<Foam::Type, Foam::scalar>::fvmLaplacian         \
     fvMatrix<Type>& fvm = tfvm.ref();                                          \
                                                                                \
     if (this->tsnGradScheme_().corrected())                                    \
-    {              PRINT(mesh.schemes().fluxRequired(vf.name()));                                                            \
+    {                                                                          \
         if (mesh.schemes().fluxRequired(vf.name()))                            \
         {                                                                      \
             fvm.faceFluxCorrectionPtr() = new                                  \

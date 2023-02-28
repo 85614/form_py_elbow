@@ -314,11 +314,29 @@ def init_variable():
     d_cell_bounday = np.linalg.norm(detla_boundary, axis=1)
     face_owner_boundary = face_owner[count_internal_face: count_internal_face + count_boundary_face]
     # U_boundary = U_boundaryField_
-    if "phi_mesh_surfaceInterpolation_weights_" not in globals():
-        surfaceInterpolation_weights = np.empty(ni)
-        surfaceInterpolation_weights.fill(0.5)
+    surfaceInterpolation_weights = mesh_surfaceInterpolation_weights_
+    print(f"{mesh_schemes_laplacian_laplacian_nu_U_=}")
+    print(f"{mesh_schemes_div_div_phi_U_=}")
+    
+    global laplacian_corrected, laplacian_delta_coeffs
+    laplacian_corrected = mesh_schemes_laplacian_laplacian_nu_U_[2] != 'orthogonal'
+    if mesh_schemes_laplacian_laplacian_nu_U_[2] == 'corrected':
+        laplacian_delta_coeffs = mesh_nonOrthDeltaCoeffs_
+    elif mesh_schemes_laplacian_laplacian_nu_U_[2] == 'orthogonal':
+        laplacian_delta_coeffs = mesh_deltaCoeffs_
     else:
-        surfaceInterpolation_weights = phi_mesh_surfaceInterpolation_weights_
+        raise Exception("unknow laplacian scheme")
+
+    global div_surface_interpolation_weights_maker
+    if mesh_schemes_div_div_phi_U_[1] == 'linear':
+        div_surface_interpolation_weights_maker = lambda: mesh_surfaceInterpolation_weights_
+    elif mesh_schemes_div_div_phi_U_[1] == 'limitedLinearV':
+        div_surface_interpolation_weights_maker = lambda: limitedSurfaceInterpolationScheme_weights(phi, U, surfaceInterpolation_weights, calcLimiter(phi, U))
+        global limitedLinearV_k
+        limitedLinearV_k = float(mesh_schemes_div_div_phi_U_[2])
+        pass
+    else:
+        raise Exception("unknow div scheme")
 
 
 ########################################
@@ -388,6 +406,264 @@ LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS = range(6)
 LOWER, DIAG, UPPER, SOURCE, INTERNALCOEFFS, BOUNDARYCOEFFS = 'lower', 'diag', 'upper', 'source', 'internalCoeffs', 'boundaryCoeffs'
 INTERNALFIELD, BOUNDARYFIELD = 'internalField', 'boundaryField'
 
+############## Gauss limitedLinearV 1 begin ####################### 
+def NVDVTVDV_r(*args):
+    """
+        scalar r
+        (
+            const scalar faceFlux,
+            const vector& phiP,
+            const vector& phiN,
+            const tensor& gradcP,
+            const tensor& gradcN,
+            const vector& d
+        ) const
+        {
+            vector gradfV = phiN - phiP;
+            scalar gradf = gradfV & gradfV;
+
+            scalar gradcf;
+
+            if (faceFlux > 0)
+            {
+                gradcf = gradfV & (d & gradcP);
+            }
+            else
+            {
+                gradcf = gradfV & (d & gradcN);
+            }
+
+            if (mag(gradcf) >= 1000*mag(gradf))
+            {
+                return 2*1000*sign(gradcf)*sign(gradf) - 1;
+            }
+            else
+            {
+                return 2*(gradcf/gradf) - 1;
+            }
+        }
+    """
+    faceFlux, phiP, phiN, gradcP, gradcN, d = args
+    gradfV = phiN - phiP
+    gradf = np.matmul(gradfV, gradfV)
+
+    if (faceFlux > 0):
+        gradcf = np.matmul(gradfV, np.matmul(d.reshape(1, 3), gradcP.reshape(3, 3)).reshape(3))
+    else:
+        gradcf = np.matmul(gradfV, np.matmul(d.reshape(1, 3), gradcN.reshape(3, 3)).reshape(3))
+    mag = np.abs
+    sign = np.sign
+    if (mag(gradcf) >= 1000*mag(gradf)):
+        return 2*1000*sign(gradcf)*sign(gradf) - 1;
+    else:
+        return 2*(gradcf/gradf) - 1;
+
+
+def limiter(cdWeight, faceFlux, phiP, phiN, gradcP, gradcN, d):
+    k_ = limitedLinearV_k
+    small = 2.22e-16
+    twoByk_ = 2.0/max(k_, small)
+    r = NVDVTVDV_r(faceFlux, phiP, phiN, gradcP, gradcN, d)
+    return max(min(twoByk_*r, 1), 0)
+
+def calcLimiter(faceFlux_, phi):
+    """
+void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
+(
+    const VolField<Type>& phi,
+    surfaceScalarField& limiterField
+) const
+{
+    const fvMesh& mesh = this->mesh();
+
+    tmp<VolField<typename Limiter::phiType>> tlPhi = LimitFunc<Type>()(phi);
+    const VolField<typename Limiter::phiType>& lPhi = tlPhi();
+
+    tmp<VolField<typename Limiter::gradPhiType>> tgradc(fvc::grad(lPhi));
+    const VolField<typename Limiter::gradPhiType>& gradc = tgradc();
+
+    const surfaceScalarField& CDweights = mesh.surfaceInterpolation::weights();
+
+    const labelUList& owner = mesh.owner();
+    const labelUList& neighbour = mesh.neighbour();
+
+    const vectorField& C = mesh.C();
+
+    scalarField& pLim = limiterField.primitiveFieldRef();
+
+    forAll(pLim, face)
+    {
+        label own = owner[face];
+        label nei = neighbour[face];
+
+        pLim[face] = Limiter::limiter
+        (
+            CDweights[face],
+            this->faceFlux_[face],
+            lPhi[own],
+            lPhi[nei],
+            gradc[own],
+            gradc[nei],
+            C[nei] - C[own]
+        );
+    }
+
+    const typename VolField<Type>::Boundary&
+        bPhi = phi.boundaryField();
+
+    surfaceScalarField::Boundary& bLim =
+        limiterField.boundaryFieldRef();
+
+    forAll(bLim, patchi)
+    {
+        scalarField& pLim = bLim[patchi];
+
+        if (bPhi[patchi].coupled())
+        {
+            const scalarField& pCDweights = CDweights.boundaryField()[patchi];
+            const scalarField& pFaceFlux =
+                this->faceFlux_.boundaryField()[patchi];
+
+            const Field<typename Limiter::phiType> plPhiP
+            (
+                lPhi.boundaryField()[patchi].patchInternalField()
+            );
+            const Field<typename Limiter::phiType> plPhiN
+            (
+                lPhi.boundaryField()[patchi].patchNeighbourField()
+            );
+            const Field<typename Limiter::gradPhiType> pGradcP
+            (
+                gradc.boundaryField()[patchi].patchInternalField()
+            );
+            const Field<typename Limiter::gradPhiType> pGradcN
+            (
+                gradc.boundaryField()[patchi].patchNeighbourField()
+            );
+
+            // Build the d-vectors
+            vectorField pd(CDweights.boundaryField()[patchi].patch().delta());
+
+            forAll(pLim, face)
+            {
+                pLim[face] = Limiter::limiter
+                (
+                    pCDweights[face],
+                    pFaceFlux[face],
+                    plPhiP[face],
+                    plPhiN[face],
+                    pGradcP[face],
+                    pGradcN[face],
+                    pd[face]
+                );
+            }
+        }
+        else
+        {
+            pLim = 1.0;
+        }
+    }
+}
+    """
+    tlPhi = phi
+    lPhi = tlPhi
+
+    tgradc = fvc_grad(lPhi)
+    gradc = tgradc
+
+    CDweights = mesh_surfaceInterpolation_weights_
+
+    owner = face_owner
+    neighbour = face_neighbour
+
+    limiterField = { INTERNALFIELD: np.zeros(ni), BOUNDARYFIELD: np.zeros(nb) }
+    pLim = limiterField[INTERNALFIELD]
+
+    def make_internalField(CDweights, faceFlux_, lPhi, gradc, mesh_delta_ref_):
+        for face in range(ni):
+            own = owner[face]
+            nei = neighbour[face]
+
+            pLim[face] = limiter\
+            (
+                CDweights[face],
+                faceFlux_[face],
+                lPhi[own],
+                lPhi[nei],
+                gradc[own],
+                gradc[nei],
+                mesh_delta_ref_[face]
+            )
+    make_internalField(*[x[INTERNALFIELD] for x in [CDweights, faceFlux_, lPhi, gradc, mesh_delta_ref_]])
+    limiterField[BOUNDARYFIELD][:] = 1.0
+    return limiterField
+
+def limitedSurfaceInterpolationScheme_weights(faceFlux_, phi, CDweights, tLimiter):
+    """
+Foam::limitedSurfaceInterpolationScheme<Type>::weights
+(
+    const VolField<Type>& phi,
+    const surfaceScalarField& CDweights,
+    tmp<surfaceScalarField> tLimiter
+) const
+{
+    // Note that here the weights field is initialised as the limiter
+    // from which the weight is calculated using the limiter value
+    surfaceScalarField& Weights = tLimiter.ref();
+
+    scalarField& pWeights = Weights.primitiveFieldRef();
+
+    forAll(pWeights, face)
+    {
+        pWeights[face] =
+            pWeights[face]*CDweights[face]
+          + (1.0 - pWeights[face])*pos0(faceFlux_[face]);
+    }
+
+    surfaceScalarField::Boundary& bWeights =
+        Weights.boundaryFieldRef();
+
+    forAll(bWeights, patchi)
+    {
+        scalarField& pWeights = bWeights[patchi];
+
+        const scalarField& pCDweights = CDweights.boundaryField()[patchi];
+        const scalarField& pFaceFlux = faceFlux_.boundaryField()[patchi];
+
+        forAll(pWeights, face)
+        {
+            pWeights[face] =
+                pWeights[face]*pCDweights[face]
+              + (1.0 - pWeights[face])*pos0(pFaceFlux[face]);
+        }
+    }
+
+    return tLimiter;
+}
+    """
+    pos0 = lambda x: 1 if x >= 0 else 0
+    Weights = tLimiter
+    pWeights = Weights[INTERNALFIELD]
+    def make_internalField(pWeights, CDweights, faceFlux_):
+        for face in range(ni):
+            pWeights[face] = \
+                pWeights[face]*CDweights[face] \
+            + (1.0 - pWeights[face])*pos0(faceFlux_[face])
+    make_internalField(pWeights, CDweights[INTERNALFIELD], faceFlux_[INTERNALFIELD])
+    res = {}
+    res[INTERNALFIELD] = pWeights
+    pWeights = Weights[BOUNDARYFIELD]
+    pCDweights = CDweights[BOUNDARYFIELD]
+    pFaceFlux = faceFlux_[BOUNDARYFIELD]
+    for face in range(nb):
+        pWeights[face] = \
+            pWeights[face]*pCDweights[face] \
+            + (1.0 - pWeights[face])*pos0(pFaceFlux[face])
+    res[BOUNDARYFIELD] = pWeights
+    return res
+
+############## Gauss limitedLinearV 1 end ####################### 
+
 def make_UEqn():
     init_variable()
     global ddt_U, div_phi_U, laplacian_nu_U, UEqn
@@ -401,11 +677,14 @@ def make_UEqn():
 
 
     div_phi_U = {}
-    div_phi_U[UPPER] = phi[INTERNALFIELD] * (1-surfaceInterpolation_weights[INTERNALFIELD])
-    div_phi_U[LOWER] = -phi[INTERNALFIELD] * (surfaceInterpolation_weights[INTERNALFIELD])
+    div_surface_interpolation_weights = div_surface_interpolation_weights_maker()
+    div_phi_U[UPPER] = phi[INTERNALFIELD] * (1-div_surface_interpolation_weights[INTERNALFIELD])
+    div_phi_U[LOWER] = -phi[INTERNALFIELD] * (div_surface_interpolation_weights[INTERNALFIELD])
     div_phi_U[DIAG] = -sum_lower_upper(div_phi_U) 
     div_phi_U[SOURCE] = 0
-    div_phi_U[BOUNDARYCOEFFS] = -np.sum(U[BOUNDARYFIELD] * face_area_boundary, axis=1)[:,None]*U[BOUNDARYFIELD]
+    w_b = div_surface_interpolation_weights[BOUNDARYFIELD].reshape(nb, 1)
+    U_f = U[BOUNDARYFIELD] * w_b + (U[INTERNALFIELD][face_owner[ni:ni+nb]]) * (1-w_b)
+    div_phi_U[BOUNDARYCOEFFS] = -phi[BOUNDARYFIELD].reshape(nb,1) * U_f
     div_phi_U[INTERNALCOEFFS] = np.zeros((nb, 3))
 
     for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
@@ -420,8 +699,8 @@ def make_UEqn():
 
     laplacian_nu_U = laplacian_base(nu, U)
     
-    laplacian_nu_U[INTERNALCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) * mesh_nonOrthDeltaCoeffs_[BOUNDARYFIELD])[:,None]
-    laplacian_nu_U[BOUNDARYCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) * mesh_nonOrthDeltaCoeffs_[BOUNDARYFIELD])[:,None]*U[BOUNDARYFIELD]
+    laplacian_nu_U[INTERNALCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) * laplacian_delta_coeffs[BOUNDARYFIELD])[:,None]
+    laplacian_nu_U[BOUNDARYCOEFFS] = -(nu * np.linalg.norm(face_area[ni:ni+nb], axis=1) * laplacian_delta_coeffs[BOUNDARYFIELD])[:,None]*U[BOUNDARYFIELD]
     for t, l, r in zip(boundary_u_type, boundary_start, boundary_end):
         first = boundary_start[0]
         if t == zeroGradient:
@@ -500,11 +779,13 @@ def laplacian_base(k, vf):
         k = { INTERNALFIELD: np.full(ni, k), BOUNDARYFIELD: np.full(nb, k) }
     k_surface = interpolate(k)
 
-    res[LOWER] = face_area_norm[:ni] * mesh_nonOrthDeltaCoeffs_[INTERNALFIELD] * k_surface[INTERNALFIELD]
-    res[UPPER] = face_area_norm[:ni] * mesh_nonOrthDeltaCoeffs_[INTERNALFIELD] * k_surface[INTERNALFIELD]
+    res[LOWER] = face_area_norm[:ni] * laplacian_delta_coeffs[INTERNALFIELD] * k_surface[INTERNALFIELD]
+    res[UPPER] = face_area_norm[:ni] * laplacian_delta_coeffs[INTERNALFIELD] * k_surface[INTERNALFIELD]
     res[DIAG] = -sum_lower_upper(res)
     res[SOURCE] = 0
-
+    
+    if not laplacian_corrected:
+        return res
     grad_vf = fvc_grad(vf)
     grad_vf_f = interpolate(grad_vf)
     
@@ -547,7 +828,8 @@ def faceH(Eqn):
     for face in range(nb):
         res_b[face] = Eqn[INTERNALCOEFFS][face] * p[INTERNALFIELD][face_owner][ni+face] - Eqn[BOUNDARYCOEFFS][face]
     res = { INTERNALFIELD: res, BOUNDARYFIELD: res_b }
-    res = handle_all_list2(res, Eqn_faceFluxCorrectionPtr, lambda x, y: x + y)
+    if laplacian_corrected:
+        res = handle_all_list2(res, Eqn_faceFluxCorrectionPtr, lambda x, y: x + y)
     return res
 
 def fvc_grad(vf):
@@ -640,7 +922,7 @@ def make_pUqn():
 
     # assert_allclose(pEqn[SOURCE], str2arr("(0.000129312 -4.53493e-05 -0.000531795 0.000245766 0.000418036 -0.000215969)"))
     pEqn[INTERNALCOEFFS] = np.zeros(nb)
-    pEqn_VALUEINTERNALCOEFFS = -(np.linalg.norm(face_area[ni:ni+nb], axis=1) * mesh_nonOrthDeltaCoeffs_[BOUNDARYFIELD])
+    pEqn_VALUEINTERNALCOEFFS = -(np.linalg.norm(face_area[ni:ni+nb], axis=1) * laplacian_delta_coeffs[BOUNDARYFIELD])
     pEqn_VALUEINTERNALCOEFFS *= rAU[INTERNALFIELD][face_owner[ni: ni+nb]]
     
     for t, l, r in zip(boundary_p_type, boundary_start, boundary_end):

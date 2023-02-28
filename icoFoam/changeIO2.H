@@ -9,9 +9,13 @@ Ostream &printNone(Ostream &os, _Ty &&x, bool isNone);
         return os << v;                                \
     }
 
+Foam::Ostream &print2py(Foam::Ostream &os, const Foam::token &v)
+{
+    return os << '"' << v << '"';
+}
 Foam::Ostream &print2py(Foam::Ostream &os, const Foam::word &v)
 {
-    return os << "'" << v << "'";
+    return os << '"' << v << '"';
 }
 
 Ostream &print2py(Ostream &os, const scalar v)
@@ -49,8 +53,8 @@ Ostream &print2py(Ostream &os, const VectorSpace<Form, Cmpt, Ncmpts> &list)
 template <typename ListType>
 Ostream &print2pylist(Ostream &os, const ListType &list);
 
-template <typename Type, typename std::enable_if<!std::is_void<typename Type::iterator>::value, int>::type = 1>
-Ostream &print2py(Ostream &os, const Type &list)
+template <typename Type>
+auto print2py(Ostream &os, const Type &list) -> typename std::enable_if<!std::is_void<decltype(list.cbegin())>::value, Ostream&>::type
 {
     return print2pylist(os, list);
 }
